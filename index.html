@@ -1,0 +1,136 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>LineFlow Creator</title>
+    <script src="https://unpkg.com/paper@0.12.15/dist/paper-full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #tools {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 8px;
+            z-index: 10;
+        }
+        #tools button, #tools input[type=color] {
+            margin: 5px;
+        }
+        canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+<div id="tools">
+    <button onclick="newLine()">Nova Linha</button>
+    <button onclick="duplicateLine()">Duplicar Linha</button>
+    <input type="color" id="colorPicker" value="#FF0080" onchange="changeColor()">
+    <button onclick="deleteLine()">Apagar Linha</button>
+    <button onclick="exportPNG()">Exportar PNG</button>
+    <button onclick="exportPDF()">Exportar PDF</button>
+</div>
+
+<canvas id="myCanvas" resize></canvas>
+
+<script>
+    paper.setup('myCanvas');
+
+    let currentPath = null;
+    let paths = [];
+
+    function newLine() {
+        currentPath = new paper.Path({
+            strokeColor: document.getElementById('colorPicker').value,
+            strokeWidth: 2
+        });
+        paths.push(currentPath);
+    }
+
+    function onMouseDown(event) {
+        if (currentPath) {
+            currentPath.add(event.point);
+        } else {
+            selectPath(event.point);
+        }
+    }
+
+    function onMouseDrag(event) {
+        if (currentPath) {
+            currentPath.add(event.point);
+        }
+    }
+
+    function selectPath(point) {
+        const hit = paper.project.hitTest(point, { segments: true, stroke: true, tolerance: 10 });
+        if (hit && hit.item) {
+            currentPath = hit.item;
+        }
+    }
+
+    function duplicateLine() {
+        if (currentPath) {
+            const clone = currentPath.clone();
+            clone.position.x += 20;
+            clone.position.y += 20;
+            paths.push(clone);
+            currentPath = clone;
+        }
+    }
+
+    function changeColor() {
+        if (currentPath) {
+            currentPath.strokeColor = document.getElementById('colorPicker').value;
+        }
+    }
+
+    function deleteLine() {
+        if (currentPath) {
+            currentPath.remove();
+            paths = paths.filter(path => path !== currentPath);
+            currentPath = null;
+        }
+    }
+
+    async function exportPNG() {
+        const canvas = document.getElementById('myCanvas');
+        const dataURL = canvas.toDataURL("image/png");
+        const link = document.createElement('a');
+        link.download = 'lineflow-creator.png';
+        link.href = dataURL;
+        link.click();
+    }
+
+    async function exportPDF() {
+        const canvas = document.getElementById('myCanvas');
+        const canvasImg = await html2canvas(canvas);
+        const imgData = canvasImg.toDataURL('image/png');
+        const pdf = new jspdf.jsPDF({
+            orientation: 'landscape',
+            unit: 'px',
+            format: [canvas.width, canvas.height]
+        });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save('lineflow-creator.pdf');
+    }
+
+    paper.view.onMouseDown = onMouseDown;
+    paper.view.onMouseDrag = onMouseDrag;
+
+</script>
+
+</body>
+</html>
