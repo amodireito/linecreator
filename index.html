@@ -16,15 +16,12 @@
         #tools button, #tools select, #tools input[type=color] {
             margin: 4px;
         }
-        canvas {
-            width: 100vw; height: 100vh; display: block;
-        }
+        canvas { width: 100vw; height: 100vh; display: block; }
     </style>
 </head>
 <body>
 
 <div id="tools">
-    <button onclick="newLine()">Nova Linha</button>
     <button onclick="selectMode()">Seleção</button>
     <button onclick="undo()">Voltar</button>
     <select id="thickness" onchange="changeThickness()">
@@ -47,10 +44,12 @@
 <script>
     paper.setup('myCanvas');
     const canvasElem = document.getElementById('myCanvas');
-
     let currentPath = null;
     let paths = [];
     let isCmdDown = false;
+
+    // Ativar histórico de undo no Paper.js
+    paper.project.installPlugins(paper.Undo, paper.Tool);
 
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
@@ -68,30 +67,30 @@
         if (!e.metaKey) isCmdDown = false;
     });
 
-    function newLine() {
-        selectMode();
-        currentPath = new paper.Path({
-            strokeColor: document.getElementById('colorPicker').value,
-            strokeWidth: parseInt(document.getElementById('thickness').value),
-            fullySelected: false
-        });
-        paths.push(currentPath);
-    }
-
     function selectMode() {
+        if (currentPath) currentPath.fullySelected = false;
         currentPath = null;
+        paper.project.deselectAll();
     }
 
     function onMouseDown(event) {
-        if (currentPath && !isCmdDown) {
-            currentPath.add(event.point);
-        } else {
+        if (isCmdDown) {
             selectPath(event.point);
+            return;
         }
+        // Inicia novo desenho se não houver um ativo
+        if (!currentPath) {
+            currentPath = new paper.Path({
+                strokeColor: document.getElementById('colorPicker').value,
+                strokeWidth: parseInt(document.getElementById('thickness').value)
+            });
+            paths.push(currentPath);
+        }
+        currentPath.add(event.point);
     }
 
     function onMouseDrag(event) {
-        if (currentPath && !isCmdDown) {
+        if (!isCmdDown && currentPath) {
             currentPath.add(event.point);
         }
     }
@@ -104,7 +103,7 @@
     }
 
     function selectPath(point) {
-        paper.project.activeLayer.selected = false;
+        paper.project.deselectAll();
         let hit = paper.project.hitTest(point, { segments: true, stroke: true, tolerance: 10 });
         if (hit && hit.item) {
             hit.item.fullySelected = true;
@@ -115,17 +114,14 @@
     function duplicateLine() {
         if (currentPath) {
             const clone = currentPath.clone();
-            clone.position.x += 20;
-            clone.position.y += 20;
+            clone.position.x += 0; clone.position.y += 0;
             paths.push(clone);
             currentPath = clone;
         }
     }
 
     function changeColor() {
-        if (currentPath) {
-            currentPath.strokeColor = document.getElementById('colorPicker').value;
-        }
+        if (currentPath) currentPath.strokeColor = document.getElementById('colorPicker').value;
     }
 
     function changeThickness() {
