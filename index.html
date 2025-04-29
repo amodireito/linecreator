@@ -7,16 +7,26 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; background: #f5f0e6; }
-        #tools { position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px; z-index: 10; }
-        #tools button, #tools select, #tools input[type=color] { margin: 4px; }
-        canvas { width: 100vw; height: 100vh; display: block; }
+        body { margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        #tools {
+            position: fixed; top: 10px; left: 10px;
+            background: rgba(255,255,255,0.9);
+            padding: 10px; border-radius: 8px; z-index: 10;
+        }
+        #tools button, #tools select, #tools input[type=color] {
+            margin: 4px;
+        }
+        canvas {
+            width: 100vw; height: 100vh; display: block;
+        }
     </style>
 </head>
 <body>
+
 <div id="tools">
     <button onclick="newLine()">Nova Linha</button>
     <button onclick="selectMode()">Seleção</button>
+    <button onclick="undo()">Voltar</button>
     <select id="thickness" onchange="changeThickness()">
         <option value="1">1px</option>
         <option value="2" selected>2px</option>
@@ -25,21 +35,41 @@
         <option value="5">5px</option>
     </select>
     <input type="color" id="colorPicker" value="#FF0080" onchange="changeColor()">
+    <input type="color" id="bgPicker" value="#f5f0e6" onchange="changeBG()" title="Cor do fundo">
     <button onclick="duplicateLine()">Duplicar Linha</button>
     <button onclick="deleteLine()">Apagar Linha</button>
     <button onclick="exportPNG()">Exportar PNG</button>
     <button onclick="exportPDF()">Exportar PDF</button>
 </div>
+
 <canvas id="myCanvas" resize></canvas>
 
 <script>
     paper.setup('myCanvas');
+    const canvasElem = document.getElementById('myCanvas');
 
     let currentPath = null;
     let paths = [];
+    let isCmdDown = false;
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', e => {
+        if (e.metaKey) {
+            isCmdDown = true;
+            if (e.key.toLowerCase() === 'j' && currentPath) {
+                duplicateLine(); e.preventDefault();
+            }
+            if (e.key.toLowerCase() === 'z') {
+                undo(); e.preventDefault();
+            }
+        }
+    });
+    document.addEventListener('keyup', e => {
+        if (!e.metaKey) isCmdDown = false;
+    });
 
     function newLine() {
-        // Iniciar um novo caminho com as configurações atuais
+        selectMode();
         currentPath = new paper.Path({
             strokeColor: document.getElementById('colorPicker').value,
             strokeWidth: parseInt(document.getElementById('thickness').value),
@@ -49,38 +79,34 @@
     }
 
     function selectMode() {
-        // Sair do modo de desenho, permitindo seleção
         currentPath = null;
     }
 
     function onMouseDown(event) {
-        if (currentPath) {
-            // Adiciona nós ao desenhar
+        if (currentPath && !isCmdDown) {
             currentPath.add(event.point);
         } else {
-            // Seleciona caminho existente
             selectPath(event.point);
         }
     }
 
     function onMouseDrag(event) {
-        if (currentPath) {
+        if (currentPath && !isCmdDown) {
             currentPath.add(event.point);
         }
     }
 
     function onMouseUp(event) {
         if (currentPath) {
-            // Simplifica e alisa os nós após desenhar
             currentPath.simplify(8);
             currentPath.smooth({ type: 'continuous' });
         }
     }
 
     function selectPath(point) {
+        paper.project.activeLayer.selected = false;
         let hit = paper.project.hitTest(point, { segments: true, stroke: true, tolerance: 10 });
         if (hit && hit.item) {
-            // Destacar nó e permitir edição
             hit.item.fullySelected = true;
             currentPath = hit.item;
         }
@@ -88,7 +114,7 @@
 
     function duplicateLine() {
         if (currentPath) {
-            let clone = currentPath.clone();
+            const clone = currentPath.clone();
             clone.position.x += 20;
             clone.position.y += 20;
             paths.push(clone);
@@ -103,10 +129,12 @@
     }
 
     function changeThickness() {
-        let w = parseInt(document.getElementById('thickness').value);
-        if (currentPath) {
-            currentPath.strokeWidth = w;
-        }
+        const w = parseInt(document.getElementById('thickness').value);
+        if (currentPath) currentPath.strokeWidth = w;
+    }
+
+    function changeBG() {
+        canvasElem.style.backgroundColor = document.getElementById('bgPicker').value;
     }
 
     function deleteLine() {
@@ -117,9 +145,12 @@
         }
     }
 
+    function undo() {
+        paper.project.undo();
+    }
+
     async function exportPNG() {
-        const canvas = document.getElementById('myCanvas');
-        const dataURL = canvas.toDataURL('image/png');
+        const dataURL = canvasElem.toDataURL('image/png');
         const link = document.createElement('a');
         link.download = 'lineflow-creator.png';
         link.href = dataURL;
@@ -127,13 +158,10 @@
     }
 
     async function exportPDF() {
-        const canvas = document.getElementById('myCanvas');
-        const canvasImg = await html2canvas(canvas);
+        const canvasImg = await html2canvas(canvasElem);
         const imgData = canvasImg.toDataURL('image/png');
-        const pdf = new jspdf.jsPDF({
-            orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height]
-        });
-        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'px', format: [canvasElem.width, canvasElem.height] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvasElem.width, canvasElem.height);
         pdf.save('lineflow-creator.pdf');
     }
 
