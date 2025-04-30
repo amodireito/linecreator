@@ -77,9 +77,6 @@
     // Tools
     const drawTool = new paper.Tool();
     const editTool = new paper.Tool();
-    editTool.minDistance = 0;
-    editTool.maxDistance = Infinity;
-
     let currentHit = null;
 
     function toggleEdit() {
@@ -111,16 +108,14 @@
     };
     drawTool.activate();
 
-    // Edit Mode
+    // Edit Mode: show handles
     editTool.onMouseDown = event => {
         paper.project.deselectAll();
-        currentHit = paper.project.hitTest(event.point, { segments:true, handles:true, stroke:true, tolerance:10 });
-        if (currentHit) {
-            if (currentHit.type === 'segment') {
-                currentHit.segment.selected = true;
-            } else {
-                currentHit.handle.selected = true;
-            }
+        currentHit = paper.project.hitTest(event.point, { segments:true, handles:true, stroke:true, tolerance: 10 });
+        if (currentHit && currentHit.item instanceof paper.Path) {
+            // show all handles for this path
+            currentHit.item.selected = true;
+            currentHit.item.fullySelected = true;
         }
     };
     editTool.onMouseDrag = event => {
@@ -135,17 +130,21 @@
         }
         strokes.forEach(recalcOffsets);
     };
-    editTool.onMouseUp = event => { currentHit = null; };
+    editTool.onMouseUp = event => {
+        if (currentHit && currentHit.item instanceof paper.Path) {
+            // keep only selected segments visible, hide handles for others
+            currentHit.item.fullySelected = false;
+        }
+        currentHit = null;
+    };
 
     function recalcOffsets(item) {
-        // remove old clones
-        item.clones.forEach(c => c.remove());
-        item.clones = [];
+        item.clones.forEach(c=>c.remove()); item.clones = [];
         const path = item.master;
         if (path.segments.length < 2) return;
         const length = path.length;
         const offsetMax = parseInt(spacingInput.value);
-        for (let i=1; i<=nClones; i++) {
+        for (let i=1;i<=nClones;i++) {
             const clone = path.clone();
             clone.strokeColor = path.strokeColor;
             clone.strokeWidth = path.strokeWidth;
@@ -162,15 +161,13 @@
 
     function updateSpacing() { strokes.forEach(recalcOffsets); }
     function undo() { paper.project.undo(); }
-    function changeBG() { canvasElem.style.backgroundColor = document.getElementById('bgPicker').value; }
-
+    function changeBG() { canvasElem.style.backgroundColor = bgPicker.value; }
     function duplicateMaster() {
         const last = strokes[strokes.length-1]; if (!last) return;
-        const copy = last.master.clone(); copy.strokeColor = last.master.strokeColor; copy.strokeWidth = last.master.strokeWidth;
+        last.master.clone().style = last.master.style;
     }
-
-    function exportPNG() { const a = document.createElement('a'); a.download='zentangle-offset.png'; a.href=canvasElem.toDataURL('image/png'); a.click(); }
-    function exportPDF() { html2canvas(canvasElem).then(img=>{ const pdf = new jspdf.jsPDF({orientation:'landscape',unit:'px',format:[canvasElem.width,canvasElem.height]}); pdf.addImage(img.toDataURL('image/png'),'PNG',0,0); pdf.save('zentangle-offset.pdf'); }); }
+    function exportPNG() { const a=document.createElement('a');a.download='zentangle-offset.png';a.href=canvasElem.toDataURL('image/png');a.click(); }
+    function exportPDF() { html2canvas(canvasElem).then(img=>{const pdf=new jspdf.jsPDF({orientation:'landscape',unit:'px',format:[canvasElem.width,canvasElem.height]});pdf.addImage(img.toDataURL('image/png'),'PNG',0,0);pdf.save('zentangle-offset.pdf');}); }
 </script>
 </body>
 </html>
