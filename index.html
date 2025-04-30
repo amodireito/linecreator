@@ -9,7 +9,7 @@
     <style>
         body { margin: 0; padding: 0; overflow: hidden; }
         #tools { position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 6px; z-index: 10; }
-        #tools * { margin: 4px; }
+        #tools * { margin: 4px; font-size: 14px; }
         canvas { width: 100vw; height: 100vh; display: block; }
     </style>
 </head>
@@ -23,7 +23,7 @@
         <option value="4">4px</option>
         <option value="5">5px</option>
     </select>
-    <input type="number" id="spacing" value="20" min="1" max="100" title="Espaçamento (px)" onchange="drawClones()">
+    <input type="number" id="spacing" value="20" min="1" max="100" title="Espaçamento (px)" onchange="updateSpacing()">
     <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
     <input type="color" id="bgPicker" value="#ffffff" onchange="changeBG()" title="Cor do fundo">
     <button id="editBtn" onclick="toggleEdit()">Editar</button>
@@ -38,15 +38,14 @@
     const thickness = document.getElementById('thickness');
     const spacingInput = document.getElementById('spacing');
     const colorPicker = document.getElementById('colorPicker');
-    let masterPath = null;
-    let clones = [];
+    let strokes = [];
     let isDrawing = false;
     let editMode = false;
     let isCmd = false;
+    const nClones = 5;
 
-    // Atalhos
     document.addEventListener('keydown', e => {
-        if (e.metaKey) { isCmd = true; }
+        if (e.metaKey) isCmd = true;
         if (isCmd && e.key.toLowerCase() === 'j') { duplicateMaster(); e.preventDefault(); }
         if (isCmd && e.key.toLowerCase() === 'z') { undo(); e.preventDefault(); }
     });
@@ -55,48 +54,51 @@
     function toggleEdit() {
         editMode = !editMode;
         document.getElementById('editBtn').innerText = editMode ? 'Fechar Ed.' : 'Editar';
-        if (!editMode && masterPath) masterPath.fullySelected = false;
+        if (!editMode) paper.project.deselectAll();
     }
 
     function onMouseDown(event) {
         if (editMode) {
             paper.project.deselectAll();
             const hit = paper.project.hitTest(event.point, { segments: true, stroke: true, tolerance: 10 });
-            if (hit && hit.item) {
-                hit.item.fullySelected = true;
-            }
+            if (hit && hit.item) hit.item.fullySelected = true;
             return;
         }
-        masterPath = new paper.Path({
+        // iniciar novo stroke
+        const master = new paper.Path({
             strokeColor: colorPicker.value,
-            strokeWidth: parseInt(thickness.value)
+            strokeWidth: parseInt(thickness.value),
+            fullySelected: false
         });
+        strokes.push({ master: master, clones: [] });
         isDrawing = true;
     }
 
     function onMouseDrag(event) {
         if (!isDrawing || editMode) return;
-        masterPath.add(event.point);
-        drawClones();
+        const current = strokes[strokes.length - 1];
+        current.master.add(event.point);
+        drawClones(current);
     }
 
     function onMouseUp(event) {
         if (!isDrawing || editMode) return;
         isDrawing = false;
-        masterPath.simplify(4);
-        masterPath.smooth({ type: 'continuous' });
-        drawClones();
+        const current = strokes[strokes.length - 1];
+        current.master.simplify(4);
+        current.master.smooth({ type: 'continuous' });
+        drawClones(current);
     }
 
-    function drawClones() {
-        // remove clones antigos
-        clones.forEach(c => c.remove());
-        clones = [];
-        if (!masterPath || masterPath.segments.length < 2) return;
+    function drawClones(strokeItem) {
+        // remove clones deste stroke
+        strokeItem.clones.forEach(c => c.remove());
+        strokeItem.clones = [];
+        const masterPath = strokeItem.master;
+        if (masterPath.segments.length < 2) return;
         const length = masterPath.length;
         const offsetMax = parseInt(spacingInput.value);
-        const n = 5;
-        for (let i = 1; i <= n; i++) {
+        for (let i = 1; i <= nClones; i++) {
             const clone = masterPath.clone();
             clone.strokeColor = masterPath.strokeColor;
             clone.strokeWidth = masterPath.strokeWidth;
@@ -105,21 +107,27 @@
                 const t = loc.offset / length;
                 const taper = Math.sin(Math.PI * t);
                 const normal = masterPath.getNormalAt(loc.offset).normalize();
-                seg.point = seg.point.add(normal.multiply(offsetMax * (i/n) * taper));
+                seg.point = seg.point.add(normal.multiply(offsetMax * (i/nClones) * taper));
             });
-            clones.push(clone);
+            strokeItem.clones.push(clone);
         }
     }
 
     function undo() { paper.project.undo(); }
+
     function changeBG() { canvasElem.style.backgroundColor = bgPicker.value; }
 
+    function updateSpacing() {
+        // redesenha clones de todos strokes
+        strokes.forEach(drawClones);
+    }
+
     function duplicateMaster() {
-        if (!masterPath) return;
-        const copy = masterPath.clone();
-        copy.strokeColor = masterPath.strokeColor;
-        copy.strokeWidth = masterPath.strokeWidth;
-        paper.project.addChild(copy);
+        const current = strokes[strokes.length - 1];
+        if (!current) return;
+        const copy = current.master.clone();
+        copy.strokeColor = current.master.strokeColor;
+        copy.strokeWidth = current.master.strokeWidth;
     }
 
     async function exportPNG() {
