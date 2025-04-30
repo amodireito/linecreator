@@ -7,31 +7,53 @@
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; }
-        #tools { position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 6px; z-index: 10; }
+        body { margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        #tour {
+            position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+            background: rgba(0,0,0,0.7); color: #fff;
+            padding: 8px 16px; border-radius: 4px;
+            display: flex; align-items: center; z-index: 30;
+            max-width: 400px; font-size: 14px;
+        }
+        #tour button {
+            background: transparent; border: none; color: #fff;
+            font-size: 18px; cursor: pointer; padding: 0 8px;
+        }
+        #tour #tipText { flex: 1; text-align: center; }
+        #tools { position: fixed; top: 60px; left: 10px;
+            background: rgba(255,255,255,0.9); padding: 10px;
+            border-radius: 6px; z-index: 20;
+        }
         #tools * { margin: 4px; font-size: 14px; }
         canvas { width: 100vw; height: 100vh; display: block; }
     </style>
 </head>
 <body>
-<div id="tools">
-    <button onclick="undo()">Voltar</button>
-    <select id="thickness" onchange="changeThickness()">
-        <option value="1">1px</option>
-        <option value="2" selected>2px</option>
-        <option value="3">3px</option>
-        <option value="4">4px</option>
-        <option value="5">5px</option>
-    </select>
-    <input type="number" id="spacing" value="20" min="1" max="100" title="Espaçamento (px)" onchange="updateSpacing()">
-    <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
-    <input type="color" id="bgPicker" value="#ffffff" onchange="changeBG()" title="Cor do fundo">
-    <button id="editBtn" onclick="toggleEdit()">Editar</button>
-    <button onclick="duplicateMaster()">Duplicar (Cmd+J)</button>
-    <button onclick="exportPNG()">Exportar PNG</button>
-    <button onclick="exportPDF()">Exportar PDF</button>
-</div>
-<canvas id="myCanvas" resize></canvas>
+    <!-- Tour de instruções -->
+    <div id="tour">
+        <button id="prevTip">‹</button>
+        <div id="tipText"></div>
+        <button id="nextTip">›</button>
+    </div>
+
+    <div id="tools">
+        <button onclick="undo()">Voltar</button>
+        <select id="thickness" onchange="changeThickness()">
+            <option value="1">1px</option>
+            <option value="2" selected>2px</option>
+            <option value="3">3px</option>
+            <option value="4">4px</option>
+            <option value="5">5px</option>
+        </select>
+        <input type="number" id="spacing" value="20" min="1" max="100" title="Espaçamento (px)" onchange="updateSpacing()">
+        <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
+        <input type="color" id="bgPicker" value="#ffffff" onchange="changeBG()" title="Cor do fundo">
+        <button id="editBtn" onclick="toggleEdit()">Editar</button>
+        <button onclick="duplicateMaster()">Duplicar (Cmd+J)</button>
+        <button onclick="exportPNG()">Exportar PNG</button>
+        <button onclick="exportPDF()">Exportar PDF</button>
+    </div>
+    <canvas id="myCanvas" resize></canvas>
 <script>
     paper.setup('myCanvas');
     const canvasElem = document.getElementById('myCanvas');
@@ -43,6 +65,22 @@
     let editMode = false;
     let isCmd = false;
     const nClones = 5;
+
+    // Tour de dicas
+    const tips = [
+        'Desenhe arrastando para criar o traço mestre.',
+        'Ajuste a espessura e cor antes de desenhar.',
+        'Use Espaçamento para controlar o offset entre linhas.',
+        'Clique em Editar para modificar nós do traço mestre.',
+        'Pressione Cmd+J para duplicar o traço mestre.',
+        'Use Voltar ou Cmd+Z para desfazer ações.'
+    ];
+    let currentTip = 0;
+    const tipText = document.getElementById('tipText');
+    document.getElementById('prevTip').onclick = () => { currentTip = (currentTip - 1 + tips.length) % tips.length; showTip(); };
+    document.getElementById('nextTip').onclick = () => { currentTip = (currentTip + 1) % tips.length; showTip(); };
+    function showTip() { tipText.textContent = tips[currentTip]; }
+    showTip();
 
     document.addEventListener('keydown', e => {
         if (e.metaKey) isCmd = true;
@@ -64,12 +102,7 @@
             if (hit && hit.item) hit.item.fullySelected = true;
             return;
         }
-        // iniciar novo stroke
-        const master = new paper.Path({
-            strokeColor: colorPicker.value,
-            strokeWidth: parseInt(thickness.value),
-            fullySelected: false
-        });
+        const master = new paper.Path({ strokeColor: colorPicker.value, strokeWidth: parseInt(thickness.value) });
         strokes.push({ master: master, clones: [] });
         isDrawing = true;
     }
@@ -91,9 +124,7 @@
     }
 
     function drawClones(strokeItem) {
-        // remove clones deste stroke
-        strokeItem.clones.forEach(c => c.remove());
-        strokeItem.clones = [];
+        strokeItem.clones.forEach(c => c.remove()); strokeItem.clones = [];
         const masterPath = strokeItem.master;
         if (masterPath.segments.length < 2) return;
         const length = masterPath.length;
@@ -102,7 +133,7 @@
             const clone = masterPath.clone();
             clone.strokeColor = masterPath.strokeColor;
             clone.strokeWidth = masterPath.strokeWidth;
-            clone.segments.forEach((seg, idx) => {
+            clone.segments.forEach((seg) => {
                 const loc = masterPath.getLocationOf(seg.point);
                 const t = loc.offset / length;
                 const taper = Math.sin(Math.PI * t);
@@ -114,31 +145,23 @@
     }
 
     function undo() { paper.project.undo(); }
-
-    function changeBG() { canvasElem.style.backgroundColor = bgPicker.value; }
-
-    function updateSpacing() {
-        // redesenha clones de todos strokes
-        strokes.forEach(drawClones);
-    }
+    function changeBG() { canvasElem.style.backgroundColor = document.getElementById('bgPicker').value; }
+    function updateSpacing() { strokes.forEach(drawClones); }
+    function changeThickness() { /* para próximos traços */ }
 
     function duplicateMaster() {
-        const current = strokes[strokes.length - 1];
-        if (!current) return;
-        const copy = current.master.clone();
-        copy.strokeColor = current.master.strokeColor;
-        copy.strokeWidth = current.master.strokeWidth;
+        const current = strokes[strokes.length - 1]; if (!current) return;
+        const copy = current.master.clone(); copy.strokeColor = current.master.strokeColor; copy.strokeWidth = current.master.strokeWidth;
     }
 
     async function exportPNG() {
-        const dataURL = canvasElem.toDataURL('image/png');
-        const link = document.createElement('a'); link.download = 'zentangle-offset.png'; link.href = dataURL; link.click();
+        const dataURL = canvasElem.toDataURL('image/png'); const link = document.createElement('a'); link.download = 'zentangle-offset.png'; link.href = dataURL; link.click();
     }
 
     async function exportPDF() {
         const canvasImg = await html2canvas(canvasElem);
         const imgData = canvasImg.toDataURL('image/png');
-        const pdf = new jspdf.jsPDF({ orientation:'landscape', unit:'px', format:[canvasElem.width, canvasElem.height] });
+        const pdf = new jspdf.jsPDF({ orientation:'landscape',unit:'px',format:[canvasElem.width,canvasElem.height] });
         pdf.addImage(imgData,'PNG',0,0,canvasElem.width,canvasElem.height); pdf.save('zentangle-offset.pdf');
     }
 
