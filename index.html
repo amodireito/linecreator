@@ -23,6 +23,7 @@
         <option value="4">4px</option>
         <option value="5">5px</option>
     </select>
+    <input type="number" id="spacing" value="20" min="1" max="40" title="Espaçamento (px)" onchange="changeSpacing()">
     <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
     <input type="color" id="bgPicker" value="#ffffff" onchange="changeBG()" title="Cor do fundo">
     <button onclick="duplicateMaster()">Duplicar (Cmd+J)</button>
@@ -33,12 +34,13 @@
 <script>
     paper.setup('myCanvas');
     const canvasElem = document.getElementById('myCanvas');
+    const thickness = document.getElementById('thickness');
+    const spacingInput = document.getElementById('spacing');
+    const colorPicker = document.getElementById('colorPicker');
     let masterPath = null;
     let clones = [];
     let isDrawing = false;
     let isCmd = false;
-    const steps = 5;    // 5 linhas
-    const maxOffset = 20;  // distância máxima no centro
 
     // Atalhos
     document.addEventListener('keydown', e => {
@@ -50,13 +52,13 @@
 
     function onMouseDown(event) {
         if (isCmd && masterPath) {
-            // editar nós
             masterPath.fullySelected = true;
-            return;
+            return; // edição de nós
         }
-        // iniciar novo traço mestre
-        clearAll();
-        masterPath = new paper.Path({ strokeColor: colorPicker.value, strokeWidth: parseInt(thickness.value) });
+        masterPath = new paper.Path({
+            strokeColor: colorPicker.value,
+            strokeWidth: parseInt(thickness.value)
+        });
         isDrawing = true;
     }
 
@@ -75,41 +77,49 @@
     }
 
     function drawClones() {
-        // remove antigos
-        clones.forEach(c => c.remove()); clones = [];
+        // remove clones antigos
+        clones.forEach(c => c.remove());
+        clones = [];
+        if (!masterPath) return;
         const length = masterPath.length;
-        for (let i = 1; i <= steps; i++) {
+        const offsetMax = parseInt(spacingInput.value);
+        const n = 5;
+        for (let i = 1; i <= n; i++) {
             const clone = masterPath.clone();
             clone.strokeColor = masterPath.strokeColor;
             clone.strokeWidth = masterPath.strokeWidth;
-            // segmento a segmento, offset com taper
             clone.segments.forEach((seg, idx) => {
-                const offset = i * maxOffset / steps;
                 const loc = masterPath.getLocationOf(seg.point);
                 const t = loc.offset / length;
                 const taper = Math.sin(Math.PI * t);
                 const normal = masterPath.getNormalAt(loc.offset).normalize();
-                seg.point = seg.point.add(normal.multiply(offset * taper));
+                seg.point = seg.point.add(normal.multiply(offsetMax * (i/n) * taper));
             });
             clones.push(clone);
         }
     }
 
-    function clearAll() {
-        paper.project.clear(); clones = []; masterPath = null;
+    function undo() { paper.project.undo(); }
+
+    function changeThickness() {
+        // atualizado para próximos traços
+    }
+
+    function changeSpacing() {
+        drawClones();
+    }
+
+    function changeBG() {
+        canvasElem.style.backgroundColor = document.getElementById('bgPicker').value;
     }
 
     function duplicateMaster() {
         if (!masterPath) return;
-        const top = masterPath.clone();
-        top.strokeColor = masterPath.strokeColor;
-        top.strokeWidth = masterPath.strokeWidth;
-        paper.project.addChild(top);
+        const copy = masterPath.clone();
+        copy.strokeColor = masterPath.strokeColor;
+        copy.strokeWidth = masterPath.strokeWidth;
+        paper.project.addChild(copy);
     }
-
-    function undo() { paper.project.undo(); }
-    function changeThickness() { /* atualiza futuros strokes */ }
-    function changeBG() { canvasElem.style.backgroundColor = bgPicker.value; }
 
     async function exportPNG() {
         const dataURL = canvasElem.toDataURL('image/png');
@@ -120,7 +130,7 @@
         const canvasImg = await html2canvas(canvasElem);
         const imgData = canvasImg.toDataURL('image/png');
         const pdf = new jspdf.jsPDF({ orientation:'landscape', unit:'px', format:[canvasElem.width, canvasElem.height] });
-        pdf.addImage(imgData,'PNG',0,0,canvasElem.width, canvasElem.height); pdf.save('zentangle-offset.pdf');
+        pdf.addImage(imgData,'PNG',0,0,canvasElem.width,canvasElem.height); pdf.save('zentangle-offset.pdf');
     }
 
     paper.view.onMouseDown = onMouseDown;
