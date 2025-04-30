@@ -40,12 +40,15 @@
     const canvasElem = document.getElementById('myCanvas');
     let masterPath, clones = [];
     let isDrawing = false;
+    const steps = 12;    // número de linhas paralelas
+    const spacing = 10;  // distância entre elas
 
     function onMouseDown(event) {
-        // Iniciar novo traço mestre
+        // inicia o traço mestre
         masterPath = new paper.Path({
             strokeColor: document.getElementById('colorPicker').value,
-            strokeWidth: parseInt(document.getElementById('thickness').value)
+            strokeWidth: parseInt(document.getElementById('thickness').value),
+            fullySelected: false
         });
         isDrawing = true;
     }
@@ -53,37 +56,42 @@
     function onMouseDrag(event) {
         if (!isDrawing) return;
         masterPath.add(event.point);
+        // atualizar clones em tempo real
+        // remover clones antigos
+        clones.forEach(c => c.remove());
+        clones = [];
+        // suavizar o traço principal tempestivamente
+        masterPath.simplify(4);
+        // criar clones traduzidos
+        for (let i = 1; i <= steps; i++) {
+            let clone = masterPath.clone();
+            clone.strokeColor = masterPath.strokeColor;
+            clone.strokeWidth = masterPath.strokeWidth;
+            // normal no meio do caminho
+            let offset = i * spacing;
+            // desloca clone pela normal média de cada segmento
+            let normals = masterPath.segments.map(seg => seg.point).map((pt, idx, arr) => {
+                if (idx < arr.length - 1) return masterPath.getNormalAt(masterPath.getOffsetOf(pt)).normalize().multiply(offset);
+                return new paper.Point(0,0);
+            });
+            // desloca cada ponto do clone
+            clone.segments.forEach((seg, idx) => seg.point = seg.point.add(normals[idx] || normals[normals.length-1]));
+            clones.push(clone);
+        }
     }
 
     function onMouseUp(event) {
         if (!isDrawing) return;
         isDrawing = false;
-        // Suavizar e simplificar
-        masterPath.simplify(8);
         masterPath.smooth({ type: 'continuous' });
-
-        // Criar offsets paralelos
-        const steps = 12; // quantos clones
-        const spacing = 10; // distância entre clones
-        const normal = masterPath.getNormalAt(masterPath.length / 2).normalize();
-        clones = [];
-        for (let i = 1; i <= steps; i++) {
-            const clone = masterPath.clone();
-            clone.strokeColor = masterPath.strokeColor;
-            clone.strokeWidth = masterPath.strokeWidth;
-            clone.translate(normal.multiply(spacing * i));
-            clones.push(clone);
-        }
     }
 
     function undo() {
-        if (paper.project.history && paper.project.history.length > 0) {
-            paper.project.undo();
-        }
+        paper.project.undo();
     }
 
     function changeThickness() {
-        // Atualiza espessura para próximos traços
+        // futura implementação
     }
 
     function changeBG() {
