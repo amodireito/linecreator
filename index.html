@@ -2,18 +2,23 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>LineFlow Creator - Offset Zentangle</n
+    <title>LineFlow Creator - Offset Zentangle</title>
     <script src="https://unpkg.com/paper@0.12.15/dist/paper-full.min.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        body { margin:0; padding:0; overflow:hidden; }
-        #tools { position:fixed; top:10px; left:10px; background:rgba(255,255,255,0.9); padding:10px; border-radius:6px; z-index:10; }
-        #tools * { margin:4px; }
-        canvas { width:100vw; height:100vh; display:block; }
+        body { margin: 0; padding: 0; overflow: hidden; }
+        #tools {
+            position: fixed; top: 10px; left: 10px;
+            background: rgba(255,255,255,0.9);
+            padding: 10px; border-radius: 6px; z-index: 10;
+        }
+        #tools * { margin: 4px; }
+        canvas { width: 100vw; height: 100vh; display: block; }
     </style>
 </head>
 <body>
+
 <div id="tools">
     <button onclick="undo()">Voltar</button>
     <select id="thickness" onchange="changeThickness()">
@@ -28,15 +33,13 @@
     <button onclick="exportPNG()">Exportar PNG</button>
     <button onclick="exportPDF()">Exportar PDF</button>
 </div>
+
 <canvas id="myCanvas" resize></canvas>
 <script>
     paper.setup('myCanvas');
     const canvasElem = document.getElementById('myCanvas');
     let masterPath, clones = [];
     let isDrawing = false;
-
-    // Undo setup
-    paper.project.installPlugins(paper.Undo);
 
     function onMouseDown(event) {
         // Iniciar novo traço mestre
@@ -65,7 +68,7 @@
         const normal = masterPath.getNormalAt(masterPath.length / 2).normalize();
         clones = [];
         for (let i = 1; i <= steps; i++) {
-            let clone = masterPath.clone();
+            const clone = masterPath.clone();
             clone.strokeColor = masterPath.strokeColor;
             clone.strokeWidth = masterPath.strokeWidth;
             clone.translate(normal.multiply(spacing * i));
@@ -74,11 +77,13 @@
     }
 
     function undo() {
-        paper.project.undo();
+        if (paper.project.history && paper.project.history.length > 0) {
+            paper.project.undo();
+        }
     }
 
     function changeThickness() {
-        // Ajuste para futuros traços
+        // Atualiza espessura para próximos traços
     }
 
     function changeBG() {
@@ -96,14 +101,15 @@
     async function exportPDF() {
         const canvasImg = await html2canvas(canvasElem);
         const imgData = canvasImg.toDataURL('image/png');
-        const pdf = new jspdf.jsPDF({ orientation:'landscape', unit:'px', format:[canvasElem.width, canvasElem.height] });
-        pdf.addImage(imgData,'PNG',0,0,canvasElem.width, canvasElem.height);
+        const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'px', format: [canvasElem.width, canvasElem.height] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvasElem.width, canvasElem.height);
         pdf.save('zentangle-offset.pdf');
     }
 
     paper.view.onMouseDown = onMouseDown;
     paper.view.onMouseDrag = onMouseDrag;
-    paper.view.onMouseUp = onMouseUp;
+    paper.view.onMouseUp   = onMouseUp;
 </script>
+
 </body>
 </html>
