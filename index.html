@@ -33,9 +33,9 @@
         </select>
         <input type="number" id="spacing" value="20" min="1" max="100" title="Espaçamento (px)">
         <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
-        <input type="color" id="bgPicker" value="#ffffff" title="Cor do fundo">
-        <button id="editBtn">Editar</button>
-        <button id="dupBtn">Duplicar (Cmd+J)</button>
+        <input type="color" id="bgPicker" value="#ffffff" title="Cor do fundo" onchange="changeBG()">
+        <button id="editBtn" onclick="toggleEdit()">Editar</button>
+        <button id="dupBtn" onclick="duplicateMaster()">Duplicar (Cmd+J)</button>
         <button onclick="exportPNG()">Exportar PNG</button>
         <button onclick="exportPDF()">Exportar PDF</button>
     </div>
@@ -43,20 +43,19 @@
 <script>
     paper.setup('myCanvas');
     const canvasElem = document.getElementById('myCanvas');
+    const thickness = document.getElementById('thickness');
+    const spacingInput = document.getElementById('spacing');
+    const colorPicker = document.getElementById('colorPicker');
     let strokes = [];
-    let nClones = 5;
-    let drawTool = new paper.Tool();
-    let editTool = new paper.Tool();
-    let currentStroke = null;
-    let currentHit = null;
+    const nClones = 5;
 
-    // Tour tips
+    // Tour
     const tips = [
         'Desenhe arrastando para criar o traço mestre.',
         'Ajuste espessura, cor e espaçamento antes de desenhar.',
         'Use Espaçamento para controlar offset das linhas.',
-        'Clique em Editar para ativar o modo de edição de nós.',
-        'Arraste alças para ajustar a curva do traço mestre.',
+        'Clique em Editar para ativar edição de nós e alças.',
+        'Arraste pontos e alças para ajustar a curva do mestre.',
         'Pressione Cmd+J para duplicar o traço mestre.',
         'Use Voltar ou Cmd+Z para desfazer ações.'
     ];
@@ -67,94 +66,111 @@
     function showTip() { tipText.textContent = tips[tipIndex]; }
     showTip();
 
-    // Common shortcuts
+    // Shortcuts
     document.addEventListener('keydown', e => {
         if (e.metaKey) {
-            if (e.key.toLowerCase() === 'z') { paper.project.undo(); e.preventDefault(); }
-            if (e.key.toLowerCase() === 'j') { duplicateMaster(); e.preventDefault(); }
+            if (e.key.toLowerCase()==='z') { undo(); e.preventDefault(); }
+            if (e.key.toLowerCase()==='j') { duplicateMaster(); e.preventDefault(); }
         }
     });
 
-    // UI handlers
-    document.getElementById('editBtn').onclick = () => { editTool.activate(); document.getElementById('editBtn').disabled = true; drawTool.activate = drawTool.activate; };
-    document.getElementById('dupBtn').onclick = duplicateMaster;
-    document.getElementById('bgPicker').onchange = () => { canvasElem.style.backgroundColor = bgPicker.value; };
+    // Tools
+    const drawTool = new paper.Tool();
+    const editTool = new paper.Tool();
+    editTool.minDistance = 0;
+    editTool.maxDistance = Infinity;
 
-    // Draw Tool
+    let currentHit = null;
+
+    function toggleEdit() {
+        if (paper.tool === drawTool) {
+            editTool.activate();
+            document.getElementById('editBtn').innerText = 'Fechar Ed.';
+        } else {
+            drawTool.activate();
+            document.getElementById('editBtn').innerText = 'Editar';
+            paper.project.deselectAll();
+        }
+    }
+
+    // Draw Mode
     drawTool.onMouseDown = event => {
-        currentStroke = { master: new paper.Path({ strokeColor: colorPicker.value, strokeWidth: parseInt(thickness.value) }), clones: [] };
-        strokes.push(currentStroke);
+        const master = new paper.Path({ strokeColor: colorPicker.value, strokeWidth: parseInt(thickness.value) });
+        strokes.push({ master: master, clones: [] });
     };
     drawTool.onMouseDrag = event => {
-        currentStroke.master.add(event.point);
-        drawClones(currentStroke);
+        const curr = strokes[strokes.length-1];
+        curr.master.add(event.point);
+        recalcOffsets(curr);
     };
     drawTool.onMouseUp = event => {
-        currentStroke.master.simplify(4);
-        currentStroke.master.smooth({ type: 'continuous' });
-        drawClones(currentStroke);
+        const curr = strokes[strokes.length-1];
+        curr.master.simplify(4);
+        curr.master.smooth({type:'continuous'});
+        recalcOffsets(curr);
     };
     drawTool.activate();
 
-    // Edit Tool
+    // Edit Mode
     editTool.onMouseDown = event => {
-        currentHit = paper.project.hitTest(event.point, { segments: true, handles: true, stroke: true, tolerance: 10 });
-        if (currentHit && currentHit.item) {
-            currentHit.item.fullySelected = true;
+        paper.project.deselectAll();
+        currentHit = paper.project.hitTest(event.point, { segments:true, handles:true, stroke:true, tolerance:10 });
+        if (currentHit) {
+            if (currentHit.type === 'segment') {
+                currentHit.segment.selected = true;
+            } else {
+                currentHit.handle.selected = true;
+            }
         }
     };
     editTool.onMouseDrag = event => {
         if (!currentHit) return;
         const seg = currentHit.segment;
-        if (currentHit.type === 'handle-in' || currentHit.type === 'handle-out') {
-            seg[currentHit.type] = seg[currentHit.type].add(event.delta);
+        if (currentHit.type === 'handle-in') {
+            seg.handleIn = seg.handleIn.add(event.delta);
+        } else if (currentHit.type === 'handle-out') {
+            seg.handleOut = seg.handleOut.add(event.delta);
         } else if (currentHit.type === 'segment') {
             seg.point = seg.point.add(event.delta);
         }
-        // Update clones for all strokes
-        strokes.forEach(drawClones);
+        strokes.forEach(recalcOffsets);
     };
     editTool.onMouseUp = event => { currentHit = null; };
 
-    function drawClones(strokeItem) {
-        strokeItem.clones.forEach(c => c.remove()); strokeItem.clones = [];
-        const path = strokeItem.master;
+    function recalcOffsets(item) {
+        // remove old clones
+        item.clones.forEach(c => c.remove());
+        item.clones = [];
+        const path = item.master;
         if (path.segments.length < 2) return;
         const length = path.length;
-        const offsetMax = parseInt(spacing.value);
-        for (let i = 1; i <= nClones; i++) {
+        const offsetMax = parseInt(spacingInput.value);
+        for (let i=1; i<=nClones; i++) {
             const clone = path.clone();
             clone.strokeColor = path.strokeColor;
             clone.strokeWidth = path.strokeWidth;
-            clone.segments.forEach(seg => {
+            clone.segments.forEach(seg=>{
                 const loc = path.getLocationOf(seg.point);
-                const t = loc.offset / length;
-                const taper = Math.sin(Math.PI * t);
+                const t = loc.offset/length;
+                const taper = Math.sin(Math.PI*t);
                 const normal = path.getNormalAt(loc.offset).normalize();
-                seg.point = seg.point.add(normal.multiply(offsetMax * (i/nClones) * taper));
+                seg.point = seg.point.add(normal.multiply(offsetMax*(i/nClones)*taper));
             });
-            strokeItem.clones.push(clone);
+            item.clones.push(clone);
         }
     }
 
-    function updateSpacing() {
-        strokes.forEach(drawClones);
-    }
+    function updateSpacing() { strokes.forEach(recalcOffsets); }
+    function undo() { paper.project.undo(); }
+    function changeBG() { canvasElem.style.backgroundColor = document.getElementById('bgPicker').value; }
 
     function duplicateMaster() {
-        const last = strokes[strokes.length - 1]; if (!last) return;
+        const last = strokes[strokes.length-1]; if (!last) return;
         const copy = last.master.clone(); copy.strokeColor = last.master.strokeColor; copy.strokeWidth = last.master.strokeWidth;
     }
 
-    function undo() { paper.project.undo(); }
-
-    async function exportPNG() {
-        const link = document.createElement('a'); link.download = 'zentangle-offset.png'; link.href = canvasElem.toDataURL('image/png'); link.click();
-    }
-
-    async function exportPDF() {
-        const img = await html2canvas(canvasElem); const data = img.toDataURL('image/png'); const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'px', format: [canvasElem.width, canvasElem.height] }); pdf.addImage(data, 'PNG', 0, 0); pdf.save('zentangle-offset.pdf');
-    }
+    function exportPNG() { const a = document.createElement('a'); a.download='zentangle-offset.png'; a.href=canvasElem.toDataURL('image/png'); a.click(); }
+    function exportPDF() { html2canvas(canvasElem).then(img=>{ const pdf = new jspdf.jsPDF({orientation:'landscape',unit:'px',format:[canvasElem.width,canvasElem.height]}); pdf.addImage(img.toDataURL('image/png'),'PNG',0,0); pdf.save('zentangle-offset.pdf'); }); }
 </script>
 </body>
 </html>
