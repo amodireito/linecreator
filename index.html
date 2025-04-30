@@ -8,48 +8,34 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; }
-        #tour {
-            position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.7); color: #fff;
-            padding: 8px 16px; border-radius: 4px;
-            display: flex; align-items: center; z-index: 30;
-            max-width: 400px; font-size: 14px;
-        }
-        #tour button {
-            background: transparent; border: none; color: #fff;
-            font-size: 18px; cursor: pointer; padding: 0 8px;
-        }
+        #tour { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: #fff; padding: 8px 16px; border-radius: 4px; display: flex; align-items: center; z-index: 30; max-width: 400px; font-size: 14px; }
+        #tour button { background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 0 8px; }
         #tour #tipText { flex: 1; text-align: center; }
-        #tools { position: fixed; top: 60px; left: 10px;
-            background: rgba(255,255,255,0.9); padding: 10px;
-            border-radius: 6px; z-index: 20;
-        }
+        #tools { position: fixed; top: 60px; left: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 6px; z-index: 20; }
         #tools * { margin: 4px; font-size: 14px; }
         canvas { width: 100vw; height: 100vh; display: block; }
     </style>
 </head>
 <body>
-    <!-- Tour de instruções -->
     <div id="tour">
         <button id="prevTip">‹</button>
         <div id="tipText"></div>
         <button id="nextTip">›</button>
     </div>
-
     <div id="tools">
         <button onclick="undo()">Voltar</button>
-        <select id="thickness" onchange="changeThickness()">
+        <select id="thickness">
             <option value="1">1px</option>
             <option value="2" selected>2px</option>
             <option value="3">3px</option>
             <option value="4">4px</option>
             <option value="5">5px</option>
         </select>
-        <input type="number" id="spacing" value="20" min="1" max="100" title="Espaçamento (px)" onchange="updateSpacing()">
+        <input type="number" id="spacing" value="20" min="1" max="100" title="Espaçamento (px)">
         <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
-        <input type="color" id="bgPicker" value="#ffffff" onchange="changeBG()" title="Cor do fundo">
-        <button id="editBtn" onclick="toggleEdit()">Editar</button>
-        <button onclick="duplicateMaster()">Duplicar (Cmd+J)</button>
+        <input type="color" id="bgPicker" value="#ffffff" title="Cor do fundo">
+        <button id="editBtn">Editar</button>
+        <button id="dupBtn">Duplicar (Cmd+J)</button>
         <button onclick="exportPNG()">Exportar PNG</button>
         <button onclick="exportPDF()">Exportar PDF</button>
     </div>
@@ -57,117 +43,118 @@
 <script>
     paper.setup('myCanvas');
     const canvasElem = document.getElementById('myCanvas');
-    const thickness = document.getElementById('thickness');
-    const spacingInput = document.getElementById('spacing');
-    const colorPicker = document.getElementById('colorPicker');
     let strokes = [];
-    let isDrawing = false;
-    let editMode = false;
-    let isCmd = false;
-    const nClones = 5;
+    let nClones = 5;
+    let drawTool = new paper.Tool();
+    let editTool = new paper.Tool();
+    let currentStroke = null;
+    let currentHit = null;
 
-    // Tour de dicas
+    // Tour tips
     const tips = [
         'Desenhe arrastando para criar o traço mestre.',
-        'Ajuste a espessura e cor antes de desenhar.',
-        'Use Espaçamento para controlar o offset entre linhas.',
-        'Clique em Editar para modificar nós do traço mestre.',
+        'Ajuste espessura, cor e espaçamento antes de desenhar.',
+        'Use Espaçamento para controlar offset das linhas.',
+        'Clique em Editar para ativar o modo de edição de nós.',
+        'Arraste alças para ajustar a curva do traço mestre.',
         'Pressione Cmd+J para duplicar o traço mestre.',
         'Use Voltar ou Cmd+Z para desfazer ações.'
     ];
-    let currentTip = 0;
+    let tipIndex = 0;
     const tipText = document.getElementById('tipText');
-    document.getElementById('prevTip').onclick = () => { currentTip = (currentTip - 1 + tips.length) % tips.length; showTip(); };
-    document.getElementById('nextTip').onclick = () => { currentTip = (currentTip + 1) % tips.length; showTip(); };
-    function showTip() { tipText.textContent = tips[currentTip]; }
+    document.getElementById('prevTip').onclick = () => { tipIndex = (tipIndex + tips.length - 1) % tips.length; showTip(); };
+    document.getElementById('nextTip').onclick = () => { tipIndex = (tipIndex + 1) % tips.length; showTip(); };
+    function showTip() { tipText.textContent = tips[tipIndex]; }
     showTip();
 
+    // Common shortcuts
     document.addEventListener('keydown', e => {
-        if (e.metaKey) isCmd = true;
-        if (isCmd && e.key.toLowerCase() === 'j') { duplicateMaster(); e.preventDefault(); }
-        if (isCmd && e.key.toLowerCase() === 'z') { undo(); e.preventDefault(); }
-    });
-    document.addEventListener('keyup', e => { if (!e.metaKey) isCmd = false; });
-
-    function toggleEdit() {
-        editMode = !editMode;
-        document.getElementById('editBtn').innerText = editMode ? 'Fechar Ed.' : 'Editar';
-        if (!editMode) paper.project.deselectAll();
-    }
-
-    function onMouseDown(event) {
-        if (editMode) {
-            paper.project.deselectAll();
-            const hit = paper.project.hitTest(event.point, { segments: true, stroke: true, tolerance: 10 });
-            if (hit && hit.item) hit.item.fullySelected = true;
-            return;
+        if (e.metaKey) {
+            if (e.key.toLowerCase() === 'z') { paper.project.undo(); e.preventDefault(); }
+            if (e.key.toLowerCase() === 'j') { duplicateMaster(); e.preventDefault(); }
         }
-        const master = new paper.Path({ strokeColor: colorPicker.value, strokeWidth: parseInt(thickness.value) });
-        strokes.push({ master: master, clones: [] });
-        isDrawing = true;
-    }
+    });
 
-    function onMouseDrag(event) {
-        if (!isDrawing || editMode) return;
-        const current = strokes[strokes.length - 1];
-        current.master.add(event.point);
-        drawClones(current);
-    }
+    // UI handlers
+    document.getElementById('editBtn').onclick = () => { editTool.activate(); document.getElementById('editBtn').disabled = true; drawTool.activate = drawTool.activate; };
+    document.getElementById('dupBtn').onclick = duplicateMaster;
+    document.getElementById('bgPicker').onchange = () => { canvasElem.style.backgroundColor = bgPicker.value; };
 
-    function onMouseUp(event) {
-        if (!isDrawing || editMode) return;
-        isDrawing = false;
-        const current = strokes[strokes.length - 1];
-        current.master.simplify(4);
-        current.master.smooth({ type: 'continuous' });
-        drawClones(current);
-    }
+    // Draw Tool
+    drawTool.onMouseDown = event => {
+        currentStroke = { master: new paper.Path({ strokeColor: colorPicker.value, strokeWidth: parseInt(thickness.value) }), clones: [] };
+        strokes.push(currentStroke);
+    };
+    drawTool.onMouseDrag = event => {
+        currentStroke.master.add(event.point);
+        drawClones(currentStroke);
+    };
+    drawTool.onMouseUp = event => {
+        currentStroke.master.simplify(4);
+        currentStroke.master.smooth({ type: 'continuous' });
+        drawClones(currentStroke);
+    };
+    drawTool.activate();
+
+    // Edit Tool
+    editTool.onMouseDown = event => {
+        currentHit = paper.project.hitTest(event.point, { segments: true, handles: true, stroke: true, tolerance: 10 });
+        if (currentHit && currentHit.item) {
+            currentHit.item.fullySelected = true;
+        }
+    };
+    editTool.onMouseDrag = event => {
+        if (!currentHit) return;
+        const seg = currentHit.segment;
+        if (currentHit.type === 'handle-in' || currentHit.type === 'handle-out') {
+            seg[currentHit.type] = seg[currentHit.type].add(event.delta);
+        } else if (currentHit.type === 'segment') {
+            seg.point = seg.point.add(event.delta);
+        }
+        // Update clones for all strokes
+        strokes.forEach(drawClones);
+    };
+    editTool.onMouseUp = event => { currentHit = null; };
 
     function drawClones(strokeItem) {
         strokeItem.clones.forEach(c => c.remove()); strokeItem.clones = [];
-        const masterPath = strokeItem.master;
-        if (masterPath.segments.length < 2) return;
-        const length = masterPath.length;
-        const offsetMax = parseInt(spacingInput.value);
+        const path = strokeItem.master;
+        if (path.segments.length < 2) return;
+        const length = path.length;
+        const offsetMax = parseInt(spacing.value);
         for (let i = 1; i <= nClones; i++) {
-            const clone = masterPath.clone();
-            clone.strokeColor = masterPath.strokeColor;
-            clone.strokeWidth = masterPath.strokeWidth;
-            clone.segments.forEach((seg) => {
-                const loc = masterPath.getLocationOf(seg.point);
+            const clone = path.clone();
+            clone.strokeColor = path.strokeColor;
+            clone.strokeWidth = path.strokeWidth;
+            clone.segments.forEach(seg => {
+                const loc = path.getLocationOf(seg.point);
                 const t = loc.offset / length;
                 const taper = Math.sin(Math.PI * t);
-                const normal = masterPath.getNormalAt(loc.offset).normalize();
+                const normal = path.getNormalAt(loc.offset).normalize();
                 seg.point = seg.point.add(normal.multiply(offsetMax * (i/nClones) * taper));
             });
             strokeItem.clones.push(clone);
         }
     }
 
-    function undo() { paper.project.undo(); }
-    function changeBG() { canvasElem.style.backgroundColor = document.getElementById('bgPicker').value; }
-    function updateSpacing() { strokes.forEach(drawClones); }
-    function changeThickness() { /* para próximos traços */ }
-
-    function duplicateMaster() {
-        const current = strokes[strokes.length - 1]; if (!current) return;
-        const copy = current.master.clone(); copy.strokeColor = current.master.strokeColor; copy.strokeWidth = current.master.strokeWidth;
+    function updateSpacing() {
+        strokes.forEach(drawClones);
     }
 
+    function duplicateMaster() {
+        const last = strokes[strokes.length - 1]; if (!last) return;
+        const copy = last.master.clone(); copy.strokeColor = last.master.strokeColor; copy.strokeWidth = last.master.strokeWidth;
+    }
+
+    function undo() { paper.project.undo(); }
+
     async function exportPNG() {
-        const dataURL = canvasElem.toDataURL('image/png'); const link = document.createElement('a'); link.download = 'zentangle-offset.png'; link.href = dataURL; link.click();
+        const link = document.createElement('a'); link.download = 'zentangle-offset.png'; link.href = canvasElem.toDataURL('image/png'); link.click();
     }
 
     async function exportPDF() {
-        const canvasImg = await html2canvas(canvasElem);
-        const imgData = canvasImg.toDataURL('image/png');
-        const pdf = new jspdf.jsPDF({ orientation:'landscape',unit:'px',format:[canvasElem.width,canvasElem.height] });
-        pdf.addImage(imgData,'PNG',0,0,canvasElem.width,canvasElem.height); pdf.save('zentangle-offset.pdf');
+        const img = await html2canvas(canvasElem); const data = img.toDataURL('image/png'); const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'px', format: [canvasElem.width, canvasElem.height] }); pdf.addImage(data, 'PNG', 0, 0); pdf.save('zentangle-offset.pdf');
     }
-
-    paper.view.onMouseDown = onMouseDown;
-    paper.view.onMouseDrag = onMouseDrag;
-    paper.view.onMouseUp   = onMouseUp;
 </script>
 </body>
 </html>
