@@ -2,10 +2,10 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>LineFlow Creator</title>
+    <title>LineFlow Creator - Módulos S</title>
     <script src="https://unpkg.com/paper@0.12.15/dist/paper-full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; }
         #tools {
@@ -20,9 +20,7 @@
     </style>
 </head>
 <body>
-
 <div id="tools">
-    <button onclick="selectMode()">Seleção</button>
     <button onclick="undo()">Voltar</button>
     <select id="thickness" onchange="changeThickness()">
         <option value="1">1px</option>
@@ -31,124 +29,85 @@
         <option value="4">4px</option>
         <option value="5">5px</option>
     </select>
-    <input type="color" id="colorPicker" value="#FF0080" onchange="changeColor()">
-    <input type="color" id="bgPicker" value="#f5f0e6" onchange="changeBG()" title="Cor do fundo">
-    <button onclick="duplicateLine()">Duplicar Linha</button>
-    <button onclick="deleteLine()">Apagar Linha</button>
+    <input type="color" id="colorPicker" value="#FF0080" title="Cor do traço">
+    <input type="color" id="bgPicker" value="#ffffff" onchange="changeBG()" title="Cor do fundo">
     <button onclick="exportPNG()">Exportar PNG</button>
     <button onclick="exportPDF()">Exportar PDF</button>
 </div>
-
 <canvas id="myCanvas" resize></canvas>
 
 <script>
     paper.setup('myCanvas');
     const canvasElem = document.getElementById('myCanvas');
-    let currentPath = null;
-    let paths = [];
+    let currentGroup = null;
+    let lastPoint = null;
     let isCmdDown = false;
 
-    // Ativar histórico de undo no Paper.js
-    paper.project.installPlugins(paper.Undo, paper.Tool);
+    const segmentLength = 40;
+    const amplitude = 12;
 
-    // Keyboard shortcuts
     document.addEventListener('keydown', e => {
-        if (e.metaKey) {
+        if (e.metaKey || e.ctrlKey) {
             isCmdDown = true;
-            if (e.key.toLowerCase() === 'j' && currentPath) {
-                duplicateLine(); e.preventDefault();
-            }
             if (e.key.toLowerCase() === 'z') {
                 undo(); e.preventDefault();
             }
         }
     });
-    document.addEventListener('keyup', e => {
-        if (!e.metaKey) isCmdDown = false;
-    });
-
-    function selectMode() {
-        if (currentPath) currentPath.fullySelected = false;
-        currentPath = null;
-        paper.project.deselectAll();
-    }
+    document.addEventListener('keyup', () => isCmdDown = false);
 
     function onMouseDown(event) {
-        if (isCmdDown) {
-            selectPath(event.point);
-            return;
-        }
-        // Inicia novo desenho se não houver um ativo
-        if (!currentPath) {
-            currentPath = new paper.Path({
-                strokeColor: document.getElementById('colorPicker').value,
-                strokeWidth: parseInt(document.getElementById('thickness').value)
-            });
-            paths.push(currentPath);
-        }
-        currentPath.add(event.point);
+        // Inicia novo grupo de módulos
+        currentGroup = new paper.Group();
+        currentGroup.strokeColor = document.getElementById('colorPicker').value;
+        currentGroup.strokeWidth = parseInt(document.getElementById('thickness').value);
+        lastPoint = event.point;
     }
 
     function onMouseDrag(event) {
-        if (!isCmdDown && currentPath) {
-            currentPath.add(event.point);
+        if (!currentGroup || isCmdDown) return;
+        let pt = event.point;
+        let delta = pt.subtract(lastPoint);
+        let dist = delta.length;
+        if (dist >= segmentLength) {
+            let angle = delta.angle;
+            // Criar um módulo S
+            let seg = new paper.Path();
+            seg.add(new paper.Point(0,0));
+            seg.add(new paper.Point(segmentLength*0.25, amplitude));
+            seg.add(new paper.Point(segmentLength*0.5, 0));
+            seg.add(new paper.Point(segmentLength*0.75, -amplitude));
+            seg.add(new paper.Point(segmentLength, 0));
+            seg.strokeColor = currentGroup.strokeColor;
+            seg.strokeWidth = currentGroup.strokeWidth;
+            seg.rotate(angle);
+            seg.translate(lastPoint);
+            currentGroup.addChild(seg);
+            lastPoint = lastPoint.add(delta.normalize(segmentLength));
         }
     }
 
     function onMouseUp(event) {
-        if (currentPath) {
-            currentPath.simplify(8);
-            currentPath.smooth({ type: 'continuous' });
-        }
-    }
-
-    function selectPath(point) {
-        paper.project.deselectAll();
-        let hit = paper.project.hitTest(point, { segments: true, stroke: true, tolerance: 10 });
-        if (hit && hit.item) {
-            hit.item.fullySelected = true;
-            currentPath = hit.item;
-        }
-    }
-
-    function duplicateLine() {
-        if (currentPath) {
-            const clone = currentPath.clone();
-            clone.position.x += 0; clone.position.y += 0;
-            paths.push(clone);
-            currentPath = clone;
-        }
-    }
-
-    function changeColor() {
-        if (currentPath) currentPath.strokeColor = document.getElementById('colorPicker').value;
-    }
-
-    function changeThickness() {
-        const w = parseInt(document.getElementById('thickness').value);
-        if (currentPath) currentPath.strokeWidth = w;
-    }
-
-    function changeBG() {
-        canvasElem.style.backgroundColor = document.getElementById('bgPicker').value;
-    }
-
-    function deleteLine() {
-        if (currentPath) {
-            currentPath.remove();
-            paths = paths.filter(p => p !== currentPath);
-            currentPath = null;
-        }
+        // Finaliza grupo, nada adicional
+        currentGroup = null;
     }
 
     function undo() {
         paper.project.undo();
     }
 
+    function changeThickness() {
+        // futura implementação por módulo
+    }
+
+    function changeBG() {
+        canvasElem.style.backgroundColor = document.getElementById('bgPicker').value;
+    }
+
     async function exportPNG() {
         const dataURL = canvasElem.toDataURL('image/png');
         const link = document.createElement('a');
-        link.download = 'lineflow-creator.png';
+        link.download = 'zentangle-modular.png';
         link.href = dataURL;
         link.click();
     }
@@ -158,13 +117,12 @@
         const imgData = canvasImg.toDataURL('image/png');
         const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'px', format: [canvasElem.width, canvasElem.height] });
         pdf.addImage(imgData, 'PNG', 0, 0, canvasElem.width, canvasElem.height);
-        pdf.save('lineflow-creator.pdf');
+        pdf.save('zentangle-modular.pdf');
     }
 
     paper.view.onMouseDown = onMouseDown;
     paper.view.onMouseDrag = onMouseDrag;
     paper.view.onMouseUp   = onMouseUp;
 </script>
-
 </body>
 </html>
