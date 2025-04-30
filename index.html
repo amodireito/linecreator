@@ -2,21 +2,15 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>LineFlow Creator - Módulos S</title>
+    <title>LineFlow Creator - Offset Zentangle</n
     <script src="https://unpkg.com/paper@0.12.15/dist/paper-full.min.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; font-family: Arial, sans-serif; }
-        #tools {
-            position: fixed; top: 10px; left: 10px;
-            background: rgba(255,255,255,0.9);
-            padding: 10px; border-radius: 8px; z-index: 10;
-        }
-        #tools button, #tools select, #tools input[type=color] {
-            margin: 4px;
-        }
-        canvas { width: 100vw; height: 100vh; display: block; }
+        body { margin:0; padding:0; overflow:hidden; }
+        #tools { position:fixed; top:10px; left:10px; background:rgba(255,255,255,0.9); padding:10px; border-radius:6px; z-index:10; }
+        #tools * { margin:4px; }
+        canvas { width:100vw; height:100vh; display:block; }
     </style>
 </head>
 <body>
@@ -29,67 +23,54 @@
         <option value="4">4px</option>
         <option value="5">5px</option>
     </select>
-    <input type="color" id="colorPicker" value="#FF0080" title="Cor do traço">
+    <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
     <input type="color" id="bgPicker" value="#ffffff" onchange="changeBG()" title="Cor do fundo">
     <button onclick="exportPNG()">Exportar PNG</button>
     <button onclick="exportPDF()">Exportar PDF</button>
 </div>
 <canvas id="myCanvas" resize></canvas>
-
 <script>
     paper.setup('myCanvas');
     const canvasElem = document.getElementById('myCanvas');
-    let currentGroup = null;
-    let lastPoint = null;
-    let isCmdDown = false;
+    let masterPath, clones = [];
+    let isDrawing = false;
 
-    const segmentLength = 40;
-    const amplitude = 12;
-
-    document.addEventListener('keydown', e => {
-        if (e.metaKey || e.ctrlKey) {
-            isCmdDown = true;
-            if (e.key.toLowerCase() === 'z') {
-                undo(); e.preventDefault();
-            }
-        }
-    });
-    document.addEventListener('keyup', () => isCmdDown = false);
+    // Undo setup
+    paper.project.installPlugins(paper.Undo);
 
     function onMouseDown(event) {
-        // Inicia novo grupo de módulos
-        currentGroup = new paper.Group();
-        currentGroup.strokeColor = document.getElementById('colorPicker').value;
-        currentGroup.strokeWidth = parseInt(document.getElementById('thickness').value);
-        lastPoint = event.point;
+        // Iniciar novo traço mestre
+        masterPath = new paper.Path({
+            strokeColor: document.getElementById('colorPicker').value,
+            strokeWidth: parseInt(document.getElementById('thickness').value)
+        });
+        isDrawing = true;
     }
 
     function onMouseDrag(event) {
-        if (!currentGroup || isCmdDown) return;
-        let pt = event.point;
-        let delta = pt.subtract(lastPoint);
-        let dist = delta.length;
-        if (dist >= segmentLength) {
-            let angle = delta.angle;
-            // Criar um módulo S
-            let seg = new paper.Path();
-            seg.add(new paper.Point(0,0));
-            seg.add(new paper.Point(segmentLength*0.25, amplitude));
-            seg.add(new paper.Point(segmentLength*0.5, 0));
-            seg.add(new paper.Point(segmentLength*0.75, -amplitude));
-            seg.add(new paper.Point(segmentLength, 0));
-            seg.strokeColor = currentGroup.strokeColor;
-            seg.strokeWidth = currentGroup.strokeWidth;
-            seg.rotate(angle);
-            seg.translate(lastPoint);
-            currentGroup.addChild(seg);
-            lastPoint = lastPoint.add(delta.normalize(segmentLength));
-        }
+        if (!isDrawing) return;
+        masterPath.add(event.point);
     }
 
     function onMouseUp(event) {
-        // Finaliza grupo, nada adicional
-        currentGroup = null;
+        if (!isDrawing) return;
+        isDrawing = false;
+        // Suavizar e simplificar
+        masterPath.simplify(8);
+        masterPath.smooth({ type: 'continuous' });
+
+        // Criar offsets paralelos
+        const steps = 12; // quantos clones
+        const spacing = 10; // distância entre clones
+        const normal = masterPath.getNormalAt(masterPath.length / 2).normalize();
+        clones = [];
+        for (let i = 1; i <= steps; i++) {
+            let clone = masterPath.clone();
+            clone.strokeColor = masterPath.strokeColor;
+            clone.strokeWidth = masterPath.strokeWidth;
+            clone.translate(normal.multiply(spacing * i));
+            clones.push(clone);
+        }
     }
 
     function undo() {
@@ -97,7 +78,7 @@
     }
 
     function changeThickness() {
-        // futura implementação por módulo
+        // Ajuste para futuros traços
     }
 
     function changeBG() {
@@ -107,7 +88,7 @@
     async function exportPNG() {
         const dataURL = canvasElem.toDataURL('image/png');
         const link = document.createElement('a');
-        link.download = 'zentangle-modular.png';
+        link.download = 'zentangle-offset.png';
         link.href = dataURL;
         link.click();
     }
@@ -115,14 +96,14 @@
     async function exportPDF() {
         const canvasImg = await html2canvas(canvasElem);
         const imgData = canvasImg.toDataURL('image/png');
-        const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'px', format: [canvasElem.width, canvasElem.height] });
-        pdf.addImage(imgData, 'PNG', 0, 0, canvasElem.width, canvasElem.height);
-        pdf.save('zentangle-modular.pdf');
+        const pdf = new jspdf.jsPDF({ orientation:'landscape', unit:'px', format:[canvasElem.width, canvasElem.height] });
+        pdf.addImage(imgData,'PNG',0,0,canvasElem.width, canvasElem.height);
+        pdf.save('zentangle-offset.pdf');
     }
 
     paper.view.onMouseDown = onMouseDown;
     paper.view.onMouseDrag = onMouseDrag;
-    paper.view.onMouseUp   = onMouseUp;
+    paper.view.onMouseUp = onMouseUp;
 </script>
 </body>
 </html>
