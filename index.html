@@ -31,7 +31,7 @@
             <option value="4">4px</option>
             <option value="5">5px</option>
         </select>
-        <input type="number" id="spacing" value="20" min="1" max="100" title="Espaçamento (px)" onchange="updateSpacing()">
+        <input type="number" id="spacing" value="40" min="1" max="100" title="Espaçamento (px)" onchange="updateSpacing()">
         <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
         <input type="color" id="bgPicker" value="#ffffff" title="Cor do fundo" onchange="changeBG()">
         <button id="editBtn" onclick="toggleEdit()">Editar</button>
@@ -99,7 +99,6 @@
     // EDIT MODE
     editTool.onMouseDown = event => {
         paper.project.deselectAll();
-        // Only hit test master paths
         const hit = paper.project.hitTest(event.point, {
             segments: true,
             handles: true,
@@ -108,7 +107,6 @@
         });
         if (hit && hit.item.data.isMaster) {
             currentHit = hit;
-            // show handles on master
             hit.item.fullySelected = true;
         }
     };
@@ -122,7 +120,6 @@
         } else if (currentHit.type === 'segment') {
             seg.point = seg.point.add(event.delta);
         }
-        // update offsets only for that stroke
         const stroke = strokes.find(s => s.master === currentHit.item);
         if (stroke) recalcOffsets(stroke);
     };
@@ -134,7 +131,6 @@
     };
 
     function recalcOffsets(item) {
-        // remove old clones
         item.clones.forEach(c => c.remove());
         item.clones = [];
         const path = item.master;
@@ -166,7 +162,7 @@
         copy.data.isMaster = true;
     }
     function exportPNG() { const a = document.createElement('a'); a.download='zentangle-offset.png'; a.href=canvasElem.toDataURL('image/png'); a.click(); }
-    function exportPDF() { html2canvas(canvasElem).then(img=>{ const pdf = new jspdf.jsPDF({orientation:'landscape',unit:'px',format:[canvasElem.width,canvasElem.height]}); pdf.addImage(img.toDataURL('image/png'),'PNG',0,0); pdf.save('zentangle-offset.pdf'); }); }
+    function exportPDF() { html2canvas(canvasElem).then(img=>{ const pdf=new jspdf.jsPDF({orientation:'landscape',unit:'px',format:[canvasElem.width,canvasElem.height]}); pdf.addImage(img.toDataURL('image/png'),'PNG',0,0); pdf.save('zentangle-offset.pdf'); }); }
 </script>
 </body>
 </html>
