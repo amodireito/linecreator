@@ -8,17 +8,12 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; }
-        #tools {
-            position: fixed; top: 10px; left: 10px;
-            background: rgba(255,255,255,0.9);
-            padding: 10px; border-radius: 6px; z-index: 10;
-        }
+        #tools { position: fixed; top: 10px; left: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 6px; z-index: 10; }
         #tools * { margin: 4px; }
         canvas { width: 100vw; height: 100vh; display: block; }
     </style>
 </head>
 <body>
-
 <div id="tools">
     <button onclick="undo()">Voltar</button>
     <select id="thickness" onchange="changeThickness()">
@@ -30,94 +25,107 @@
     </select>
     <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
     <input type="color" id="bgPicker" value="#ffffff" onchange="changeBG()" title="Cor do fundo">
+    <button onclick="duplicateMaster()">Duplicar (Cmd+J)</button>
     <button onclick="exportPNG()">Exportar PNG</button>
     <button onclick="exportPDF()">Exportar PDF</button>
 </div>
-
 <canvas id="myCanvas" resize></canvas>
 <script>
     paper.setup('myCanvas');
     const canvasElem = document.getElementById('myCanvas');
-    let masterPath, clones = [];
+    let masterPath = null;
+    let clones = [];
     let isDrawing = false;
-    const steps = 12;    // número de linhas paralelas
-    const spacing = 10;  // distância entre elas
+    let isCmd = false;
+    const steps = 5;    // 5 linhas
+    const maxOffset = 20;  // distância máxima no centro
+
+    // Atalhos
+    document.addEventListener('keydown', e => {
+        if (e.metaKey) { isCmd = true; e.preventDefault(); }
+        if (isCmd && e.key.toLowerCase() === 'j') duplicateMaster();
+        if (isCmd && e.key.toLowerCase() === 'z') undo();
+    });
+    document.addEventListener('keyup', e => { if (!e.metaKey) isCmd = false; });
 
     function onMouseDown(event) {
-        // inicia o traço mestre
-        masterPath = new paper.Path({
-            strokeColor: document.getElementById('colorPicker').value,
-            strokeWidth: parseInt(document.getElementById('thickness').value),
-            fullySelected: false
-        });
+        if (isCmd && masterPath) {
+            // editar nós
+            masterPath.fullySelected = true;
+            return;
+        }
+        // iniciar novo traço mestre
+        clearAll();
+        masterPath = new paper.Path({ strokeColor: colorPicker.value, strokeWidth: parseInt(thickness.value) });
         isDrawing = true;
     }
 
     function onMouseDrag(event) {
         if (!isDrawing) return;
         masterPath.add(event.point);
-        // atualizar clones em tempo real
-        // remover clones antigos
-        clones.forEach(c => c.remove());
-        clones = [];
-        // suavizar o traço principal tempestivamente
-        masterPath.simplify(4);
-        // criar clones traduzidos
-        for (let i = 1; i <= steps; i++) {
-            let clone = masterPath.clone();
-            clone.strokeColor = masterPath.strokeColor;
-            clone.strokeWidth = masterPath.strokeWidth;
-            // normal no meio do caminho
-            let offset = i * spacing;
-            // desloca clone pela normal média de cada segmento
-            let normals = masterPath.segments.map(seg => seg.point).map((pt, idx, arr) => {
-                if (idx < arr.length - 1) return masterPath.getNormalAt(masterPath.getOffsetOf(pt)).normalize().multiply(offset);
-                return new paper.Point(0,0);
-            });
-            // desloca cada ponto do clone
-            clone.segments.forEach((seg, idx) => seg.point = seg.point.add(normals[idx] || normals[normals.length-1]));
-            clones.push(clone);
-        }
+        drawClones();
     }
 
     function onMouseUp(event) {
         if (!isDrawing) return;
         isDrawing = false;
+        masterPath.simplify(4);
         masterPath.smooth({ type: 'continuous' });
+        drawClones();
     }
 
-    function undo() {
-        paper.project.undo();
+    function drawClones() {
+        // remove antigos
+        clones.forEach(c => c.remove()); clones = [];
+        const length = masterPath.length;
+        for (let i = 1; i <= steps; i++) {
+            const clone = masterPath.clone();
+            clone.strokeColor = masterPath.strokeColor;
+            clone.strokeWidth = masterPath.strokeWidth;
+            // segmento a segmento, offset com taper
+            clone.segments.forEach((seg, idx) => {
+                const offset = i * maxOffset / steps;
+                const loc = masterPath.getLocationOf(seg.point);
+                const t = loc.offset / length;
+                const taper = Math.sin(Math.PI * t);
+                const normal = masterPath.getNormalAt(loc.offset).normalize();
+                seg.point = seg.point.add(normal.multiply(offset * taper));
+            });
+            clones.push(clone);
+        }
     }
 
-    function changeThickness() {
-        // futura implementação
+    function clearAll() {
+        paper.project.clear(); clones = []; masterPath = null;
     }
 
-    function changeBG() {
-        canvasElem.style.backgroundColor = document.getElementById('bgPicker').value;
+    function duplicateMaster() {
+        if (!masterPath) return;
+        const top = masterPath.clone();
+        top.strokeColor = masterPath.strokeColor;
+        top.strokeWidth = masterPath.strokeWidth;
+        paper.project.addChild(top);
     }
+
+    function undo() { paper.project.undo(); }
+    function changeThickness() { /* atualiza futuros strokes */ }
+    function changeBG() { canvasElem.style.backgroundColor = bgPicker.value; }
 
     async function exportPNG() {
         const dataURL = canvasElem.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.download = 'zentangle-offset.png';
-        link.href = dataURL;
-        link.click();
+        const link = document.createElement('a'); link.download = 'zentangle-offset.png'; link.href = dataURL; link.click();
     }
 
     async function exportPDF() {
         const canvasImg = await html2canvas(canvasElem);
         const imgData = canvasImg.toDataURL('image/png');
-        const pdf = new jspdf.jsPDF({ orientation: 'landscape', unit: 'px', format: [canvasElem.width, canvasElem.height] });
-        pdf.addImage(imgData, 'PNG', 0, 0, canvasElem.width, canvasElem.height);
-        pdf.save('zentangle-offset.pdf');
+        const pdf = new jspdf.jsPDF({ orientation:'landscape', unit:'px', format:[canvasElem.width, canvasElem.height] });
+        pdf.addImage(imgData,'PNG',0,0,canvasElem.width, canvasElem.height); pdf.save('zentangle-offset.pdf');
     }
 
     paper.view.onMouseDown = onMouseDown;
     paper.view.onMouseDrag = onMouseDrag;
     paper.view.onMouseUp   = onMouseUp;
 </script>
-
 </body>
 </html>
