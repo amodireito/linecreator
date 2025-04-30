@@ -23,9 +23,10 @@
         <option value="4">4px</option>
         <option value="5">5px</option>
     </select>
-    <input type="number" id="spacing" value="20" min="1" max="40" title="Espaçamento (px)" onchange="changeSpacing()">
+    <input type="number" id="spacing" value="20" min="1" max="100" title="Espaçamento (px)" onchange="drawClones()">
     <input type="color" id="colorPicker" value="#800080" title="Cor do traço">
     <input type="color" id="bgPicker" value="#ffffff" onchange="changeBG()" title="Cor do fundo">
+    <button id="editBtn" onclick="toggleEdit()">Editar</button>
     <button onclick="duplicateMaster()">Duplicar (Cmd+J)</button>
     <button onclick="exportPNG()">Exportar PNG</button>
     <button onclick="exportPDF()">Exportar PDF</button>
@@ -40,20 +41,31 @@
     let masterPath = null;
     let clones = [];
     let isDrawing = false;
+    let editMode = false;
     let isCmd = false;
 
     // Atalhos
     document.addEventListener('keydown', e => {
-        if (e.metaKey) { isCmd = true; e.preventDefault(); }
-        if (isCmd && e.key.toLowerCase() === 'j') duplicateMaster();
-        if (isCmd && e.key.toLowerCase() === 'z') undo();
+        if (e.metaKey) { isCmd = true; }
+        if (isCmd && e.key.toLowerCase() === 'j') { duplicateMaster(); e.preventDefault(); }
+        if (isCmd && e.key.toLowerCase() === 'z') { undo(); e.preventDefault(); }
     });
     document.addEventListener('keyup', e => { if (!e.metaKey) isCmd = false; });
 
+    function toggleEdit() {
+        editMode = !editMode;
+        document.getElementById('editBtn').innerText = editMode ? 'Fechar Ed.' : 'Editar';
+        if (!editMode && masterPath) masterPath.fullySelected = false;
+    }
+
     function onMouseDown(event) {
-        if (isCmd && masterPath) {
-            masterPath.fullySelected = true;
-            return; // edição de nós
+        if (editMode) {
+            paper.project.deselectAll();
+            const hit = paper.project.hitTest(event.point, { segments: true, stroke: true, tolerance: 10 });
+            if (hit && hit.item) {
+                hit.item.fullySelected = true;
+            }
+            return;
         }
         masterPath = new paper.Path({
             strokeColor: colorPicker.value,
@@ -63,13 +75,13 @@
     }
 
     function onMouseDrag(event) {
-        if (!isDrawing) return;
+        if (!isDrawing || editMode) return;
         masterPath.add(event.point);
         drawClones();
     }
 
     function onMouseUp(event) {
-        if (!isDrawing) return;
+        if (!isDrawing || editMode) return;
         isDrawing = false;
         masterPath.simplify(4);
         masterPath.smooth({ type: 'continuous' });
@@ -80,7 +92,7 @@
         // remove clones antigos
         clones.forEach(c => c.remove());
         clones = [];
-        if (!masterPath) return;
+        if (!masterPath || masterPath.segments.length < 2) return;
         const length = masterPath.length;
         const offsetMax = parseInt(spacingInput.value);
         const n = 5;
@@ -100,18 +112,7 @@
     }
 
     function undo() { paper.project.undo(); }
-
-    function changeThickness() {
-        // atualizado para próximos traços
-    }
-
-    function changeSpacing() {
-        drawClones();
-    }
-
-    function changeBG() {
-        canvasElem.style.backgroundColor = document.getElementById('bgPicker').value;
-    }
+    function changeBG() { canvasElem.style.backgroundColor = bgPicker.value; }
 
     function duplicateMaster() {
         if (!masterPath) return;
